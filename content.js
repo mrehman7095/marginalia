@@ -248,13 +248,13 @@
 
     function position() {
       raf = 0;
-      let orphans = false;
       for (const pin of pinsEl.children) {
         const n = notes.find((x) => x.id === pin.dataset.id);
-        const r = n && rectOf(n);
-        const gone = n && n.kind === 'element' && !resolved.get(n.id);
+        const r = rectOf(n);
+        const gone = n.kind === 'element' && !resolved.get(n.id);
+        // Stored so the agent export can report it.
+        if (gone !== !!n.orphaned) send('markOrphaned', { id: n.id, orphaned: gone }).catch(() => {});
         n.orphaned = gone;
-        orphans ||= gone;
         const visible = r && (r.w > 0 || r.h > 0);
         pin.style.display = visible ? '' : 'none';
         if (visible) pin.style.transform = `translate(${Math.max(0, r.x - 10)}px, ${Math.max(0, r.y - 10)}px)`;

@@ -57,7 +57,7 @@ button.mg-chip.on { opacity: 1; }
 .mg-missing { display: grid; place-items: center; height: 100%; color: var(--muted); }
 .mg-overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
 .mg-box { fill: none; stroke: var(--c); stroke-width: 2.5; vector-effect: non-scaling-stroke; }
-.mg-region { stroke-dasharray: 6 4; fill: color-mix(in srgb, var(--c) 8%, transparent); }
+.mg-region { stroke-dasharray: 6 4; fill: var(--c); }
 .mg-badge { fill: var(--c); stroke: #fff; stroke-width: 2; vector-effect: non-scaling-stroke; }
 .mg-badge-num { fill: #fff; font-weight: 700; text-anchor: middle; dominant-baseline: central; font-family: system-ui, sans-serif; }
 .mg-focus .mg-mark:not(.mg-selected) { opacity: .25; }

@@ -277,6 +277,7 @@ async function pruneOlderThan(days) {
 }
 
 let offscreenReady = null;
+let exportsBuilding = 0;
 const exportsInFlight = new Set();
 
 async function ensureOffscreen() {
@@ -287,24 +288,43 @@ async function ensureOffscreen() {
   await offscreenReady;
 }
 
-async function exportSession(id, endedAt = null) {
-  const session = await db.get('sessions', id);
-  if (!session) throw new Error('Session not found');
-  await ensureOffscreen();
-  const r = await chrome.runtime.sendMessage({ target: 'offscreen', type: 'build', id, endedAt });
-  if (!r?.ok) throw new Error(r?.error || 'Export failed');
-  const safe = session.name.replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') || 'session';
-  const downloadId = await chrome.downloads.download({ url: r.url, filename: `marginalia-${safe}.html`, saveAs: false });
-  exportsInFlight.add(downloadId);
-  return downloadId;
+// Closing the offscreen document revokes its blob URLs, so wait until every download finishes.
+function closeOffscreenWhenIdle() {
+  if (!exportsBuilding && !exportsInFlight.size) chrome.offscreen.closeDocument().catch(() => {});
 }
 
-// Closing the offscreen document revokes its blob URLs, so wait until downloads finish.
 chrome.downloads.onChanged.addListener(({ id, state }) => {
   if (!exportsInFlight.has(id) || !state || state.current === 'in_progress') return;
   exportsInFlight.delete(id);
-  if (!exportsInFlight.size) chrome.offscreen.closeDocument().catch(() => {});
+  closeOffscreenWhenIdle();
 });
+
+// Builds files in the offscreen document and downloads them; returns the folder or file name.
+async function download(id, type, extra, filesFor) {
+  const session = await db.get('sessions', id);
+  if (!session) throw new Error('Session not found');
+  const base = `marginalia-${session.name.replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') || 'session'}`;
+  exportsBuilding++;
+  try {
+    await ensureOffscreen();
+    const r = await chrome.runtime.sendMessage({ target: 'offscreen', type, id, ...extra });
+    if (!r?.ok) throw new Error(r?.error || 'Export failed');
+    for (const f of filesFor(r, base)) {
+      exportsInFlight.add(await chrome.downloads.download({ saveAs: false, ...f }));
+    }
+    return base;
+  } finally {
+    exportsBuilding--;
+    closeOffscreenWhenIdle();
+  }
+}
+
+const exportSession = (id, endedAt = null) =>
+  download(id, 'build', { endedAt }, (r, base) => [{ url: r.url, filename: `${base}.html` }]);
+
+const exportForAgent = (id) =>
+  download(id, 'agent', {}, (r, base) =>
+    r.files.map((f) => ({ url: f.url, filename: `${base}/${f.name}`, conflictAction: 'overwrite' })));
 
 async function sendMode(mode) {
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
@@ -353,6 +373,12 @@ const handlers = {
   },
   resumeSession: (m) => resumeSession(m.id),
   exportSession: (m) => exportSession(m.id),
+  exportForAgent: async (m) => {
+    const id = m.id || (await activeSession())?.id;
+    if (!id) throw new Error('No active session');
+    return exportForAgent(id);
+  },
+  markOrphaned: (m) => db.patchIfSession('notes', m.id, () => ({ orphaned: m.orphaned })),
   pruneOlderThan: (m) => pruneOlderThan(m.days),
 };
 

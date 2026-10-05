@@ -38,7 +38,8 @@ $('sessions').onclick = (e) => {
   const id = e.target.closest('li[data-id]')?.dataset.id;
   if (id) open(id);
 };
-$('export').onclick = () => send('exportSession', { id: selected });
+$('export').onclick = () => send('exportSession', { id: selected }).catch((e) => alert(e.message));
+$('agent').onclick = () => send('exportForAgent', { id: selected }).catch((e) => alert(e.message));
 $('resume').onclick = async () => {
   await send('resumeSession', { id: selected });
   await loadList();

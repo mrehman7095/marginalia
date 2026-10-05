@@ -35,6 +35,20 @@ live pages.
 
 Change the shortcuts at `chrome://extensions/shortcuts`.
 
+## Export for agent
+
+**Export for agent** (popup, or next to Export in history) downloads a folder
+`marginalia-<session-name>/` with `notes.md` and one PNG per snapshot (`01-<page>.png`, ...).
+The PNGs have the borders, numbered badges and drawings painted in; the numbers match the
+notes in `notes.md`, which also lists each note's selector, text fingerprint, DOM path and
+box. It does not end the session. To hand it to Claude Code:
+
+```
+Read ~/Downloads/marginalia-2026-10-05/notes.md and the PNGs it links, then fix the notes.
+```
+
+From WSL the folder is under `/mnt/c/Users/<you>/Downloads/`. The same privacy caution applies.
+
 ## How it works
 
 - Every saved note or finished drawing captures the visible tab. Marginalia hides its own
@@ -83,6 +97,6 @@ sensitive.
 | `renderer.js`, `report.css` | Report renderer shared by the history page and the export |
 | `popup.html`, `popup.js` | Toolbar popup |
 | `history.html`, `history.js` | Session history and viewer |
-| `offscreen.html`, `offscreen.js` | Builds the export file as a Blob |
+| `offscreen.html`, `offscreen.js` | Builds the HTML export and the agent export as Blobs |
 | `ui.css` | Styles for the popup and history page |
 | `icons/` | Toolbar icons; regenerate with `node dev/make-icons.mjs` |

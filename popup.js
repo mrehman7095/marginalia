@@ -40,6 +40,15 @@ $('end').onclick = async () => {
   $('end').disabled = false;
   render();
 };
+$('agent').onclick = async () => {
+  $('agent').disabled = true;
+  try {
+    say(`Saved to Downloads/${await send('exportForAgent')}/`);
+  } catch (e) {
+    say(e.message);
+  }
+  $('agent').disabled = false;
+};
 for (const mode of ['annotate', 'draw']) {
   $(mode).onclick = async () => {
     const r = await send('mode', { mode });

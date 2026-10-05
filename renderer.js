@@ -1,9 +1,11 @@
 /* Report renderer shared by history.html and the exported file. The export embeds
- * this exact source, so it must stay self-contained: no imports, no network,
+ * this exact source, and the offscreen document uses overlaySvg for agent PNGs.
+ * It must stay self-contained: no imports, no network,
  * and no DOM access at load time.
  */
 (function (global) {
   const TAGS = ['bug', 'ux', 'copy', 'question', 'idea'];
+  const TAG_COLORS = { bug: '#e5484d', ux: '#8e4ec6', copy: '#d6951f', question: '#3e7bfa', idea: '#30a46c' };
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const fmt = (iso) => (iso ? new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '');
   const pageKey = (u) => { try { const x = new URL(u); return x.host + x.pathname + x.search; } catch { return u; } };
@@ -30,23 +32,32 @@
     if (s.tool === 'rect') return `<rect x="${x}" y="${y}" width="${rw}" height="${rh}" fill="none" stroke="${c}" stroke-width="${w}"/>`;
     if (s.tool === 'ellipse') return `<ellipse cx="${x + rw / 2}" cy="${y + rh / 2}" rx="${rw / 2}" ry="${rh / 2}" fill="none" stroke="${c}" stroke-width="${w}"/>`;
     if (s.tool === 'text') {
-      return `<text x="${a.x}" y="${a.y}" dominant-baseline="hanging" font-size="${14 + w * 2}" font-weight="600" fill="${c}" stroke="rgba(255,255,255,.85)" stroke-width="3" paint-order="stroke">${esc(s.text)}</text>`;
+      return `<text x="${a.x}" y="${a.y}" dominant-baseline="hanging" font-size="${14 + w * 2}" font-weight="600" font-family="system-ui, sans-serif" fill="${c}" stroke="rgba(255,255,255,.85)" stroke-width="3" paint-order="stroke">${esc(s.text)}</text>`;
     }
     return ''; // redactions are burned into the image pixels
   }
 
-  function snapshotHtml(snap, notes, drawings) {
+  // Presentation attributes carry the colours for standalone use (agent PNGs);
+  // report.css overrides them in the HTML report.
+  function overlaySvg(snap, notes, drawings, badge = Math.max(10, snap.vw / 64)) {
     const { vw, vh } = snap;
-    const r = Math.max(10, vw / 64);
+    const r = badge;
     const marks = notes.filter((n) => n.rect).map((n) => {
       const { x, y, w, h } = n.rect;
+      const c = TAG_COLORS[n.tag] || TAG_COLORS.bug;
       const bx = Math.max(r, Math.min(vw - r, x)), by = Math.max(r, Math.min(vh - r, y));
+      const fill = n.kind === 'region' ? `fill="${c}" fill-opacity=".08" stroke-dasharray="6 4"` : 'fill="none"';
       return `<g class="mg-mark tag-${esc(n.tag)}" data-note="${esc(n.id)}" data-tag="${esc(n.tag)}">` +
-        `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" class="mg-box${n.kind === 'region' ? ' mg-region' : ''}"/>` +
-        `<circle cx="${bx}" cy="${by}" r="${r}" class="mg-badge"/>` +
-        `<text x="${bx}" y="${by}" font-size="${r * 1.1}" class="mg-badge-num">${n.number}</text></g>`;
+        `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" ${fill} stroke="${c}" stroke-width="2.5" class="mg-box${n.kind === 'region' ? ' mg-region' : ''}"/>` +
+        `<circle cx="${bx}" cy="${by}" r="${r}" fill="${c}" stroke="#fff" stroke-width="2" class="mg-badge"/>` +
+        `<text x="${bx}" y="${by}" font-size="${r * 1.1}" fill="#fff" font-weight="700" text-anchor="middle" dominant-baseline="central" font-family="system-ui, sans-serif" class="mg-badge-num">${n.number}</text></g>`;
     }).join('');
     const strokes = drawings.flatMap((d) => d.strokes).map(strokeSvg).join('');
+    return `<svg viewBox="0 0 ${vw} ${vh}" preserveAspectRatio="none" class="mg-overlay"><g class="mg-drawings">${strokes}</g>${marks}</svg>`;
+  }
+
+  function snapshotHtml(snap, notes, drawings) {
+    const { vw, vh } = snap;
     const cards = notes.map((n) => `
       <li class="mg-card tag-${esc(n.tag)}" data-note="${esc(n.id)}" data-tag="${esc(n.tag)}" tabindex="0">
         <div class="mg-card-head"><span class="mg-num">${n.number}</span><span class="mg-tag">${esc(n.tag)}</span>
@@ -66,9 +77,7 @@
         <div class="mg-body">
           <div class="mg-figure"><div class="mg-stage" style="aspect-ratio:${vw}/${vh}">
             ${image}
-            <svg viewBox="0 0 ${vw} ${vh}" preserveAspectRatio="none" class="mg-overlay">
-              <g class="mg-drawings">${strokes}</g>${marks}
-            </svg>
+            ${overlaySvg(snap, notes, drawings)}
           </div></div>
           <ol class="mg-cards">${cards || '<li class="mg-empty">Drawings only</li>'}</ol>
         </div>
@@ -182,5 +191,5 @@
     ];
   }
 
-  global.MarginaliaReport = { mount, standaloneParts };
+  global.MarginaliaReport = { mount, standaloneParts, overlaySvg, TAGS };
 })(globalThis);
