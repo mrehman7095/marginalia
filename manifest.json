@@ -13,7 +13,7 @@
     "storage",
     "unlimitedStorage",
     "downloads",
-    "tabs"
+    "offscreen"
   ],
   "host_permissions": [
     "<all_urls>"

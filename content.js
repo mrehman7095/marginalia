@@ -12,6 +12,12 @@
 
   let session = null;
   let ui = null;
+  let restoreTimer = 0;
+
+  function showUi() {
+    clearTimeout(restoreTimer);
+    if (ui) ui.host.style.display = '';
+  }
 
   const send = (type, data = {}) =>
     chrome.runtime.sendMessage({ type, ...data }).then((r) => {
@@ -26,13 +32,23 @@
 
   chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     if (msg.type === 'hide-ui') {
-      if (!ui) return reply({});
+      let sent = false;
+      const done = () => {
+        if (sent) return;
+        sent = true;
+        reply({ page: { ...pageState(), zoom: visualViewport ? visualViewport.scale : 1 } });
+      };
+      if (!ui) return done();
       ui.host.style.display = 'none';
-      requestAnimationFrame(() => requestAnimationFrame(() => reply({})));
+      // rAF never fires in a background tab; the worker then refuses the capture anyway.
+      requestAnimationFrame(() => requestAnimationFrame(done));
+      setTimeout(done, 1000);
+      clearTimeout(restoreTimer);
+      restoreTimer = setTimeout(showUi, 3000);
       return true;
     }
     if (msg.type === 'show-ui') {
-      if (ui) ui.host.style.display = '';
+      showUi();
       reply({});
     }
     if (msg.type === 'mode') {
@@ -97,19 +113,34 @@
 
   function resolveAnchor(a) {
     if (!a?.selector) return null;
+    const textOk = (el) => !a.text || fingerprint(el) === a.text;
     try {
       const els = document.querySelectorAll(a.selector);
-      if (els.length === 1) return els[0];
+      if (els.length === 1 && textOk(els[0])) return els[0];
     } catch { /* stored selector may be invalid on this page */ }
     if (a.text && a.text.length > 1) {
-      for (const el of document.getElementsByTagName(a.tag)) if (fingerprint(el) === a.text) return el;
+      // Ancestors share the fingerprint; the one nearest the stored box and size wins.
+      const d = a.docRect;
+      let best = null, bestScore = Infinity;
+      for (const el of document.getElementsByTagName(a.tag)) {
+        if (fingerprint(el) !== a.text) continue;
+        const r = el.getBoundingClientRect();
+        const score = Math.abs(r.left + scrollX - d.x) + Math.abs(r.top + scrollY - d.y) +
+          Math.abs(r.width - d.w) + Math.abs(r.height - d.h);
+        if (score <= bestScore) [best, bestScore] = [el, score];
+      }
+      if (best) return best;
     }
     let cur = document.body;
     for (const i of a.path ? a.path.split('/') : []) cur = cur?.children[+i];
     return cur && cur !== document.body && cur.localName === a.tag ? cur : null;
   }
 
-  const pageKey = (u) => { const x = new URL(u); return x.origin + x.pathname + x.search; };
+  // Hash routes (#/ or #!/) are separate pages; plain anchors are not.
+  const pageKey = (u) => {
+    const x = new URL(u);
+    return x.origin + x.pathname + x.search + (/^#!?\//.test(x.hash) ? x.hash : '');
+  };
   const pageState = () => ({
     url: location.href, title: document.title, scrollX, scrollY,
     vw: innerWidth, vh: innerHeight, dpr: devicePixelRatio,
@@ -169,7 +200,7 @@
       toastEl.textContent = text;
       toastEl.hidden = false;
       clearTimeout(toast.t);
-      toast.t = setTimeout(() => (toastEl.hidden = true), 1800);
+      toast.t = setTimeout(() => (toastEl.hidden = true), Math.max(1800, text.length * 70));
     }
 
     function refresh() {
@@ -190,7 +221,8 @@
     function resolveNote(n) {
       if (n.kind === 'region') return null;
       let el = resolved.get(n.id);
-      if (!el || !el.isConnected) {
+      // Misses stay cached until the MutationObserver clears them.
+      if (!resolved.has(n.id) || (el && !el.isConnected)) {
         el = resolveAnchor(n.anchor);
         resolved.set(n.id, el);
       }
@@ -309,8 +341,8 @@
         });
         closeEditor();
         try {
-          await send('saveNote', { note: payload, page: pageState() });
-          toast('Note saved');
+          const { captureError } = await send('saveNote', { note: payload, page: pageState() });
+          toast(captureError ? `Note saved, screenshot failed: ${captureError}` : 'Note saved');
         } catch (err) {
           toast(err.message);
         }
@@ -326,6 +358,7 @@
         };
       }
       ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) save(); });
+      box.dirty = () => ta.value !== (note?.text || '') || sel.value !== (note?.tag || 'bug');
       editor = box;
     }
 
@@ -372,7 +405,11 @@
     function onDown(e) {
       if (ours(e)) return;
       block(e);
-      if (editor) return closeEditor();
+      if (editor) {
+        if (editor.dirty()) toast('Save or cancel the open note first.');
+        else closeEditor();
+        return;
+      }
       if (e.button !== 0) return;
       press = { x: e.clientX, y: e.clientY, target: e.target, dragging: false };
     }
@@ -704,7 +741,7 @@
     .tools { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); display: flex; gap: 4px; padding: 6px; align-items: center; }
     .tools input[type=color] { width: 30px; height: 26px; border: none; padding: 0; background: none; }
     .tools input[type=range] { width: 80px; }
-    .toast { position: fixed; left: 50%; bottom: 64px; transform: translateX(-50%); padding: 7px 12px; }
+    .toast { position: fixed; left: 50%; bottom: 64px; transform: translateX(-50%); padding: 7px 12px; max-width: min(520px, 90vw); }
     @media (prefers-color-scheme: dark) {
       button, select, textarea, .bar, .list, .editor, .tools, .toast { background: #1d2230; color: #e6e9ef; border-color: #3a4152; }
       button:hover, .item:hover { background: #2a3142; }

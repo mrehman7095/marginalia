@@ -38,11 +38,18 @@ Change the shortcuts at `chrome://extensions/shortcuts`.
 ## How it works
 
 - Every saved note or finished drawing captures the visible tab. Marginalia hides its own
-  UI for the capture. Notes and drawings on the same URL, scroll position and viewport
-  share one snapshot; a new capture replaces its image.
+  UI for the capture. Notes and drawings on the same URL (including `#/` hash routes),
+  scroll position, viewport and pixel ratio share one snapshot; a new capture replaces
+  its image. The capture is refused with a message when the tab is not in front, the
+  page moved since the save, or pinch zoom is active.
 - Element borders and drawings are stored as data and drawn over the screenshot in the
-  report. Redactions are the exception: the service worker pixelates them into the stored
-  image, so the raw pixels never reach the export.
+  report. Redactions are the exception: the service worker paints them as solid boxes
+  into the stored image, so the raw pixels never reach the export. A snapshot with a
+  redaction is never captured again; a later save in the same state starts a new
+  snapshot, which needs its own redaction. If a capture fails, the redaction is painted
+  into the stored image, or the image is dropped.
+- The export is built as a Blob in an offscreen document and downloaded from a `blob:`
+  URL. The session is marked ended only after the download starts.
 - Pins re-find their element after scrolls, resizes and single-page-app re-renders: by CSS
   selector, then by text fingerprint, then by DOM path. A note whose element is gone is
   marked orphaned in the list; it is never dropped.
@@ -58,16 +65,24 @@ member data (names, emails, PII). Do not attach exports to tickets unless every 
 comes from a local run with seed data. Use the redact tool before you capture anything
 sensitive.
 
+## Known limitations
+
+- Pages that handle keys or clicks in their own capture phase can still see some input
+  while annotate mode is on.
+- Clicks inside iframes are not intercepted, and iframes are not annotated.
+- Two notes saved at the same moment from different tabs can get the same number.
+
 ## Files
 
 | File | Purpose |
 |---|---|
 | `manifest.json` | MV3 manifest, permissions and shortcuts |
 | `background.js` | Sessions, capture queue, redaction burn-in, export download |
-| `db.js` | IndexedDB access for the service worker |
+| `db.js` | IndexedDB access for the service worker and offscreen document |
 | `content.js` | In-page pins, annotate and draw modes, floating list |
 | `renderer.js`, `report.css` | Report renderer shared by the history page and the export |
 | `popup.html`, `popup.js` | Toolbar popup |
 | `history.html`, `history.js` | Session history and viewer |
+| `offscreen.html`, `offscreen.js` | Builds the export file as a Blob |
 | `ui.css` | Styles for the popup and history page |
 | `icons/` | Toolbar icons; regenerate with `node dev/make-icons.mjs` |

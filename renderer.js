@@ -1,6 +1,6 @@
 /* Report renderer shared by history.html and the exported file. The export embeds
  * this exact source, so it must stay self-contained: no imports, no network,
- * and no DOM access at load time (the service worker loads it too).
+ * and no DOM access at load time.
  */
 (function (global) {
   const TAGS = ['bug', 'ux', 'copy', 'question', 'idea'];
@@ -166,16 +166,21 @@
     }
   }
 
-  function standalone(data, css, js) {
-    const json = JSON.stringify(data).replace(/</g, '\\u003c');
-    return '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
-      '<meta name="viewport" content="width=device-width, initial-scale=1">' +
-      `<title>Marginalia - ${esc(data.session.name)}</title><style>${css}</style></head>` +
-      `<body><div id="app"></div><script>window.MARGINALIA_DATA=${json};<\/script>` +
-      `<script>${js}<\/script>` +
-      '<script>MarginaliaReport.mount(document.getElementById("app"), window.MARGINALIA_DATA);<\/script>' +
-      '</body></html>';
+  // Returns Blob parts, one per snapshot, so no single string has to hold every image.
+  function standaloneParts(data, css, js) {
+    const json = (v) => JSON.stringify(v).replace(/</g, '\\u003c');
+    const { snapshots, ...rest } = data;
+    return [
+      '<!doctype html><html lang="en"><head><meta charset="utf-8">',
+      '<meta name="viewport" content="width=device-width, initial-scale=1">',
+      `<title>Marginalia - ${esc(data.session.name)}</title><style>`, css, '</style></head><body><div id="app"></div>',
+      `<script>window.MARGINALIA_DATA=${json({ ...rest, snapshots: [] })};<\/script>`,
+      ...snapshots.map((s) => `<script>MARGINALIA_DATA.snapshots.push(${json(s)});<\/script>`),
+      '<script>', js, '<\/script>',
+      '<script>MarginaliaReport.mount(document.getElementById("app"), window.MARGINALIA_DATA);<\/script>',
+      '</body></html>',
+    ];
   }
 
-  global.MarginaliaReport = { mount, standalone };
+  global.MarginaliaReport = { mount, standaloneParts };
 })(globalThis);

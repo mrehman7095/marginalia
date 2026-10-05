@@ -2,11 +2,12 @@
  * Content scripts read only `activeSession` from chrome.storage.local so they stay
  * inert without waking this worker; everything else goes through messages.
  */
-importScripts('db.js', 'renderer.js');
+importScripts('db.js');
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 const CAPTURE_GAP_MS = 600; // captureVisibleTab allows about 2 calls per second
-const REDACT_BLOCK_CSS_PX = 16;
+const REDACT_FILL = '#1f2330';
+const HIDE_UI_TIMEOUT_MS = 1500;
 
 const uid = () => crypto.randomUUID();
 const now = () => new Date().toISOString();
@@ -31,22 +32,25 @@ async function startSession(name) {
   return session;
 }
 
+// Exports first: if the export fails the session stays active and the caller sees the error.
 async function endSession(id, download = true) {
   const session = await db.get('sessions', id);
   if (!session) return null;
+  const endedAt = now();
+  if (download) await exportSession(id, endedAt);
   session.status = 'ended';
-  session.endedAt = now();
+  session.endedAt = endedAt;
   await db.put('sessions', session);
   const active = await activeSession();
   if (!active || active.id === id) await setActive(null);
-  if (download) await exportSession(id);
   return session;
 }
 
 async function resumeSession(id) {
+  const session = await db.get('sessions', id);
+  if (!session) throw new Error('Session not found');
   const current = await activeSession();
   if (current && current.id !== id) await endSession(current.id, false);
-  const session = await db.get('sessions', id);
   session.status = 'active';
   session.endedAt = null;
   await db.put('sessions', session);
@@ -56,31 +60,31 @@ async function resumeSession(id) {
 
 /* ---------- snapshots and capture ---------- */
 
+// Hash routes (#/ or #!/) are separate pages; plain anchors are not.
 const pageKey = (url) => {
   try {
     const u = new URL(url);
-    return u.origin + u.pathname + u.search;
+    return u.origin + u.pathname + u.search + (/^#!?\//.test(u.hash) ? u.hash : '');
   } catch {
     return url;
   }
 };
 
-const sameState = (snap, page) =>
-  pageKey(snap.url) === pageKey(page.url) &&
-  Math.round(snap.scrollX) === Math.round(page.scrollX) &&
-  Math.round(snap.scrollY) === Math.round(page.scrollY) &&
-  snap.vw === page.vw && snap.vh === page.vh;
+const stateKey = (s) =>
+  [pageKey(s.url), Math.round(s.scrollX), Math.round(s.scrollY), s.vw, s.vh, s.dpr].join('|');
 
+// A snapshot with redactions is locked: it is never found again, so it is never
+// recaptured; a later save in the same state starts a new snapshot.
 async function findOrCreateSnapshot(sessionId, page) {
   const snaps = await db.bySession('snapshots', sessionId);
-  const hit = snaps.find((s) => sameState(s, page));
+  const hit = snaps.find((s) => !s.locked && stateKey(s) === stateKey(page));
   if (hit) return hit;
   const host = new URL(page.url).hostname;
   const snap = {
     id: uid(), sessionId, url: page.url, title: page.title, host,
     nonLocal: !LOCAL_HOSTS.has(host),
     scrollX: page.scrollX, scrollY: page.scrollY, vw: page.vw, vh: page.vh, dpr: page.dpr,
-    image: null, imageBytes: 0, createdAt: now(), updatedAt: now(),
+    image: null, imageBytes: 0, locked: false, redacted: false, createdAt: now(), updatedAt: now(),
   };
   await db.put('snapshots', snap);
   return snap;
@@ -102,46 +106,89 @@ function queueCapture(tab, snapshotId) {
       lastCaptureAt = Date.now();
     }
   });
-  captureChain = job.catch((e) => console.warn('Marginalia capture failed', e));
+  captureChain = job.catch(() => {});
   pending.set(snapshotId, job);
   return job;
 }
 
-async function capture(tab, snapshotId) {
-  await chrome.tabs.sendMessage(tab.id, { type: 'hide-ui' });
-  let dataUrl;
-  try {
-    dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
-  } finally {
-    chrome.tabs.sendMessage(tab.id, { type: 'show-ui' }).catch(() => {});
-  }
-  const snap = await db.get('snapshots', snapshotId);
-  const drawings = (await db.bySession('drawings', snap.sessionId)).filter((d) => d.snapshotId === snapshotId);
-  const redactions = drawings.flatMap((d) => d.strokes).filter((s) => s.tool === 'redact');
-  snap.image = redactions.length ? await burnRedactions(dataUrl, redactions, snap.dpr) : dataUrl;
-  snap.imageBytes = snap.image.length;
-  snap.updatedAt = now();
-  await db.put('snapshots', snap);
+const withTimeout = (promise, ms, message) =>
+  Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error(message)), ms))]);
+
+async function assertActive(tabId) {
+  const tab = await chrome.tabs.get(tabId);
+  if (!tab.active) throw new Error('The tab is no longer in front, so no screenshot was taken.');
+  return tab;
 }
 
-async function burnRedactions(dataUrl, rects, dpr) {
+// captureVisibleTab takes whatever tab is in front, so check ours is, right before.
+async function grab(tabId, snap) {
+  await assertActive(tabId);
+  try {
+    const reply = await withTimeout(
+      chrome.tabs.sendMessage(tabId, { type: 'hide-ui' }), HIDE_UI_TIMEOUT_MS, 'The page did not respond.');
+    const page = reply?.page;
+    if (!page) throw new Error('The page did not report its state.');
+    if (page.zoom !== 1) throw new Error('Pinch zoom is active. Reset it and save again.');
+    if (stateKey(page) !== stateKey(snap)) throw new Error('The page moved before the screenshot. Save again.');
+    const tab = await assertActive(tabId);
+    return await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
+  } finally {
+    chrome.tabs.sendMessage(tabId, { type: 'show-ui' }).catch(() => {});
+  }
+}
+
+async function capture(tab, snapshotId) {
+  const before = await db.get('snapshots', snapshotId);
+  if (!before) return;
+  let image = null;
+  let error = null;
+  if (!before.redacted) {
+    try {
+      image = await grab(tab.id, before);
+    } catch (e) {
+      error = e;
+    }
+  }
+  const drawings = (await db.bySession('drawings', before.sessionId)).filter((d) => d.snapshotId === snapshotId);
+  const redactions = drawings.flatMap((d) => d.strokes).filter((s) => s.tool === 'redact');
+  let patch;
+  if (redactions.length) {
+    // Never keep a raw image once redactions exist: burn them into the new capture or,
+    // if that failed, into the stored image of the same state; otherwise drop it.
+    try {
+      const burned = await burnRedactions(image || before.image, redactions, before.vw);
+      patch = { image: burned, redacted: !!burned };
+    } catch (e) {
+      error ||= e;
+      patch = { image: null, redacted: false };
+    }
+  } else if (image) {
+    patch = { image };
+  }
+  if (patch) {
+    await db.patchIfSession('snapshots', snapshotId, () => ({
+      ...patch, imageBytes: patch.image?.length || 0, updatedAt: now(),
+    }));
+  }
+  if (error) throw error;
+}
+
+async function burnRedactions(dataUrl, rects, cssWidth) {
+  if (!dataUrl) return null;
   const bitmap = await createImageBitmap(await (await fetch(dataUrl)).blob());
+  const scale = bitmap.width / cssWidth;
   const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
   const ctx = canvas.getContext('2d');
   ctx.drawImage(bitmap, 0, 0);
-  const block = Math.max(4, Math.round(REDACT_BLOCK_CSS_PX * dpr));
+  // Solid fill: pixelation over known fonts can be reversed.
+  ctx.fillStyle = REDACT_FILL;
   for (const s of rects) {
     const [a, b] = s.rel;
-    const x = Math.max(0, Math.floor(Math.min(a.x, b.x) * dpr));
-    const y = Math.max(0, Math.floor(Math.min(a.y, b.y) * dpr));
-    const w = Math.min(bitmap.width, Math.ceil(Math.max(a.x, b.x) * dpr)) - x;
-    const h = Math.min(bitmap.height, Math.ceil(Math.max(a.y, b.y) * dpr)) - y;
-    if (w < 1 || h < 1) continue;
-    const small = new OffscreenCanvas(Math.max(1, Math.ceil(w / block)), Math.max(1, Math.ceil(h / block)));
-    const sctx = small.getContext('2d');
-    sctx.drawImage(canvas, x, y, w, h, 0, 0, small.width, small.height);
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(small, 0, 0, small.width, small.height, x, y, w, h);
+    const x = Math.max(0, Math.floor(Math.min(a.x, b.x) * scale));
+    const y = Math.max(0, Math.floor(Math.min(a.y, b.y) * scale));
+    const w = Math.min(bitmap.width, Math.ceil(Math.max(a.x, b.x) * scale)) - x;
+    const h = Math.min(bitmap.height, Math.ceil(Math.max(a.y, b.y) * scale)) - y;
+    if (w > 0 && h > 0) ctx.fillRect(x, y, w, h);
   }
   const blob = await canvas.convertToBlob({ type: 'image/png' });
   return 'data:image/png;base64,' + base64(new Uint8Array(await blob.arrayBuffer()));
@@ -182,8 +229,9 @@ async function saveNote(tab, { note, page }) {
   });
   if (recapture) Object.assign(record, { rect: note.rect, anchor: note.anchor });
   await db.put('notes', record);
-  if (recapture) queueCapture(tab, snap.id);
-  return record;
+  let captureError = null;
+  if (recapture) await queueCapture(tab, snap.id).catch((e) => (captureError = String(e?.message || e)));
+  return { record, captureError };
 }
 
 async function saveDrawing(tab, { strokes, page }) {
@@ -192,25 +240,12 @@ async function saveDrawing(tab, { strokes, page }) {
   const snap = await findOrCreateSnapshot(session.id, page);
   const drawing = { id: uid(), sessionId: session.id, snapshotId: snap.id, url: page.url, strokes, createdAt: now() };
   await db.put('drawings', drawing);
+  if (strokes.some((s) => s.tool === 'redact')) await db.patchIfSession('snapshots', snap.id, () => ({ locked: true }));
   await queueCapture(tab, snap.id);
   return drawing;
 }
 
 /* ---------- sessions list, report data, export ---------- */
-
-async function sessionData(id) {
-  const [session, snapshots, notes, drawings] = await Promise.all([
-    db.get('sessions', id), db.bySession('snapshots', id), db.bySession('notes', id), db.bySession('drawings', id),
-  ]);
-  const used = new Set([...notes, ...drawings].map((x) => x.snapshotId));
-  return {
-    session,
-    snapshots: snapshots.filter((s) => used.has(s.id)).sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
-    notes: notes.sort((a, b) => a.number - b.number),
-    drawings,
-    generatedAt: now(),
-  };
-}
 
 async function listSessions() {
   const [sessions, snapshots, notes] = await Promise.all([db.all('sessions'), db.all('snapshots'), db.all('notes')]);
@@ -241,16 +276,35 @@ async function pruneOlderThan(days) {
   return removed;
 }
 
-async function exportSession(id) {
-  const data = await sessionData(id);
-  const [css, js] = await Promise.all(
-    ['report.css', 'renderer.js'].map((f) => fetch(chrome.runtime.getURL(f)).then((r) => r.text())),
-  );
-  const html = MarginaliaReport.standalone(data, css, js);
-  const url = 'data:text/html;base64,' + base64(new TextEncoder().encode(html));
-  const safe = data.session.name.replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') || 'session';
-  return chrome.downloads.download({ url, filename: `marginalia-${safe}.html`, saveAs: false });
+let offscreenReady = null;
+const exportsInFlight = new Set();
+
+async function ensureOffscreen() {
+  if (await chrome.offscreen.hasDocument()) return;
+  offscreenReady ??= chrome.offscreen
+    .createDocument({ url: 'offscreen.html', reasons: ['BLOBS'], justification: 'Build export files as Blobs' })
+    .finally(() => (offscreenReady = null));
+  await offscreenReady;
 }
+
+async function exportSession(id, endedAt = null) {
+  const session = await db.get('sessions', id);
+  if (!session) throw new Error('Session not found');
+  await ensureOffscreen();
+  const r = await chrome.runtime.sendMessage({ target: 'offscreen', type: 'build', id, endedAt });
+  if (!r?.ok) throw new Error(r?.error || 'Export failed');
+  const safe = session.name.replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') || 'session';
+  const downloadId = await chrome.downloads.download({ url: r.url, filename: `marginalia-${safe}.html`, saveAs: false });
+  exportsInFlight.add(downloadId);
+  return downloadId;
+}
+
+// Closing the offscreen document revokes its blob URLs, so wait until downloads finish.
+chrome.downloads.onChanged.addListener(({ id, state }) => {
+  if (!exportsInFlight.has(id) || !state || state.current === 'in_progress') return;
+  exportsInFlight.delete(id);
+  if (!exportsInFlight.size) chrome.offscreen.closeDocument().catch(() => {});
+});
 
 async function sendMode(mode) {
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
@@ -282,9 +336,10 @@ const handlers = {
   deleteNote: (m) => db.delete('notes', m.id),
   saveDrawing: (m, sender) => saveDrawing(sender.tab, m),
   listSessions: () => listSessions(),
-  sessionData: (m) => sessionData(m.id),
+  sessionData: (m) => db.sessionData(m.id),
   renameSession: async (m) => {
     const s = await db.get('sessions', m.id);
+    if (!s) throw new Error('Session not found');
     s.name = m.name;
     await db.put('sessions', s);
     const active = await activeSession();
@@ -302,7 +357,7 @@ const handlers = {
 };
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  const handler = handlers[msg?.type];
+  const handler = !msg?.target && handlers[msg?.type];
   if (!handler) return false;
   Promise.resolve(handler(msg, sender))
     .then((result) => sendResponse({ ok: true, result }))
