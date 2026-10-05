@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Marginalia</title>
+  <link rel="stylesheet" href="ui.css">
+</head>
+<body class="popup">
+  <header><span class="logo">M</span><strong>Marginalia</strong></header>
+  <section id="idle" hidden>
+    <label for="name">Session name</label>
+    <input id="name" autocomplete="off">
+    <button id="start" class="primary">Start session</button>
+  </section>
+  <section id="active" hidden>
+    <div class="session"><span class="dot"></span><span id="sessionName"></span></div>
+    <div class="muted"><span id="noteCount">0</span> notes</div>
+    <div class="row">
+      <button id="annotate" title="Alt+Shift+N">Annotate</button>
+      <button id="draw" title="Alt+Shift+D">Draw</button>
+    </div>
+    <button id="end" class="danger">End session and export</button>
+  </section>
+  <p id="msg" class="muted" hidden></p>
+  <footer><button id="history" class="link">Open history</button></footer>
+  <script src="popup.js"></script>
+</body>
+</html>

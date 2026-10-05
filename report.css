@@ -1,0 +1,90 @@
+:root {
+  --bg: #f5f6f9; --surface: #ffffff; --text: #1b2130; --muted: #5d6677; --line: #dde1e8;
+  --accent: #3451d1; --accent-2: #6b46c1; --warn-bg: #fff4e5; --warn: #8a4b00;
+  --bug: #e5484d; --ux: #8e4ec6; --copy: #d6951f; --question: #3e7bfa; --idea: #30a46c;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12151c; --surface: #1a1f2a; --text: #e6e9ef; --muted: #9aa3b5; --line: #2e3545;
+    --accent: #7b93ff; --accent-2: #a688f0; --warn-bg: #3a2a12; --warn: #ffcf8a;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+.mg-report { max-width: 1400px; margin: 0 auto; padding: 24px 16px 48px; }
+.tag-bug { --c: var(--bug); } .tag-ux { --c: var(--ux); } .tag-copy { --c: var(--copy); }
+.tag-question { --c: var(--question); } .tag-idea { --c: var(--idea); }
+
+.mg-hero { background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 10%, var(--surface)), var(--surface) 60%);
+  border: 1px solid var(--line); border-radius: 14px; padding: 22px 24px; }
+.mg-brand { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
+.mg-hero h1 { margin: 4px 0; font-size: 26px; }
+.mg-range, .mg-muted, .mg-foot { color: var(--muted); }
+.mg-banner { margin: 12px 0 0; padding: 10px 14px; border-radius: 8px; background: var(--warn-bg); color: var(--warn); font-weight: 500; }
+.mg-stats { display: flex; flex-wrap: wrap; gap: 24px; margin-top: 14px; }
+.mg-stats h3, .mg-toc h3 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.mg-chip { display: inline-flex; gap: 6px; align-items: center; margin: 0 6px 6px 0; padding: 2px 10px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--text); font: inherit; font-size: 13px; }
+.mg-chip[class*="tag-"] { border-color: color-mix(in srgb, var(--c) 50%, var(--line)); }
+.mg-chip[class*="tag-"]::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
+button.mg-chip { cursor: pointer; opacity: .45; }
+button.mg-chip.on { opacity: 1; }
+
+.mg-controls { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+  margin: 16px 0; padding: 10px 14px; background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(6px); border: 1px solid var(--line); border-radius: 10px; }
+.mg-filter { display: flex; flex-wrap: wrap; }
+.mg-filter .mg-chip { margin-bottom: 0; }
+.mg-controls label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); }
+.mg-print { margin-left: auto; border: 1px solid var(--line); background: var(--surface); color: var(--text);
+  border-radius: 6px; padding: 4px 12px; cursor: pointer; font: inherit; }
+
+.mg-toc { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 18px; margin-bottom: 20px; }
+.mg-toc ul { margin: 0; padding-left: 18px; }
+.mg-toc > ul { padding-left: 0; list-style: none; }
+.mg-toc a { color: var(--accent); }
+
+.mg-snap { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 20px; }
+.mg-snap-head h2 { margin: 0; font-size: 17px; }
+.mg-meta { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; color: var(--muted); font-size: 12px; margin: 4px 0 12px; }
+.mg-meta code { word-break: break-all; }
+.mg-flag { padding: 1px 8px; border-radius: 999px; background: var(--warn-bg); color: var(--warn); }
+.mg-body { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
+.mg-figure { overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.mg-stage { position: relative; width: 100%; transition: transform .35s ease; }
+.mg-focus .mg-stage { cursor: zoom-out; }
+.mg-stage img { display: block; width: 100%; height: 100%; }
+.mg-missing { display: grid; place-items: center; height: 100%; color: var(--muted); }
+.mg-overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
+.mg-box { fill: none; stroke: var(--c); stroke-width: 2.5; vector-effect: non-scaling-stroke; }
+.mg-region { stroke-dasharray: 6 4; fill: color-mix(in srgb, var(--c) 8%, transparent); }
+.mg-badge { fill: var(--c); stroke: #fff; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.mg-badge-num { fill: #fff; font-weight: 700; text-anchor: middle; dominant-baseline: central; font-family: system-ui, sans-serif; }
+.mg-focus .mg-mark:not(.mg-selected) { opacity: .25; }
+.mg-mark.mg-selected .mg-box { stroke-width: 4; }
+.mg-no-borders .mg-mark, .mg-no-drawings .mg-drawings, .mg-hidden { display: none; }
+
+.mg-cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.mg-card { border: 1px solid var(--line); border-left: 4px solid var(--c); border-radius: 8px; padding: 8px 10px; cursor: pointer; }
+.mg-card:hover, .mg-card:focus { outline: none; background: color-mix(in srgb, var(--c) 7%, var(--surface)); }
+.mg-card.mg-selected { box-shadow: 0 0 0 2px var(--c); }
+.mg-card p { margin: 6px 0 0; white-space: pre-wrap; word-break: break-word; }
+.mg-card-head { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); }
+.mg-num { width: 22px; height: 22px; border-radius: 50%; background: var(--c); color: #fff; font-weight: 700; display: grid; place-items: center; }
+.mg-tag { text-transform: uppercase; letter-spacing: .04em; color: var(--c); font-weight: 600; }
+.mg-status { padding: 0 6px; border-radius: 4px; border: 1px solid var(--line); }
+.mg-resolved { color: var(--idea); }
+.mg-kind { margin-left: auto; }
+.mg-empty { color: var(--muted); }
+.mg-foot { text-align: center; font-size: 12px; margin-top: 24px; }
+
+@media (max-width: 900px) { .mg-body { grid-template-columns: 1fr; } }
+@media print {
+  body { background: #fff; color: #000; }
+  .mg-controls, .mg-toc { display: none; }
+  .mg-hero, .mg-snap { border: none; background: none; }
+  .mg-snap { break-before: page; break-inside: avoid; padding: 0; }
+  .mg-body { grid-template-columns: 1fr; }
+  .mg-stage { transform: none !important; }
+  .mg-card { break-inside: avoid; }
+}

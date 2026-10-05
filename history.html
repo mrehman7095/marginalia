@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Marginalia history</title>
+  <link rel="stylesheet" href="report.css">
+  <link rel="stylesheet" href="ui.css">
+</head>
+<body>
+  <div class="history">
+    <aside>
+      <header><span class="logo">M</span><strong>Marginalia sessions</strong></header>
+      <div>
+        <div class="muted" id="storage">Storage</div>
+        <div class="meter"><div id="meter" style="width:0"></div></div>
+      </div>
+      <div class="prune">
+        Delete sessions older than <input id="days" type="number" min="1" value="30"> days
+        <button id="prune">Delete</button>
+      </div>
+      <ul class="sessions" id="sessions"></ul>
+    </aside>
+    <main>
+      <div class="actions" id="actions" hidden>
+        <button id="export" class="primary">Export</button>
+        <button id="resume">Resume</button>
+        <button id="rename">Rename</button>
+        <button id="delete" class="danger">Delete</button>
+      </div>
+      <div id="report"><div class="placeholder">Select a session.</div></div>
+    </main>
+  </div>
+  <script src="renderer.js"></script>
+  <script src="history.js"></script>
+</body>
+</html>
