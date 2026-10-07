@@ -9,11 +9,11 @@ Plain JavaScript, Manifest V3, no build step and no dependencies.
 ## Load unpacked
 
 1. Open `chrome://extensions` and switch on Developer mode.
-2. Click **Load unpacked** and select this folder.
+2. Click **Load unpacked** and select the `extension/` folder.
 3. Pin Marginalia to the toolbar.
 
 On Windows with the repo in WSL, run `./sync-to-windows.sh` and load
-`C:\Users\murehman\Downloads\marginalia` instead. Run it again after every change, then
+`C:\Users\<you>\Downloads\marginalia` instead. Run it again after every change, then
 click reload on the extension card.
 
 Pages that were open before the extension loaded need a reload before you can annotate them.
@@ -88,6 +88,8 @@ sensitive.
 
 ## Files
 
+All paths below are under `extension/`.
+
 | File | Purpose |
 |---|---|
 | `manifest.json` | MV3 manifest, permissions and shortcuts |
@@ -117,5 +119,19 @@ Notes can go straight to one Claude Code session while you work.
 5. When Claude fixes a note it marks it resolved; the pin turns resolved within about 30
    seconds, and its tooltip shows Claude's one-line comment.
 
-The receiver is the `marginalia` Claude Code mod (`~/.claude/mods/marginalia`). It accepts
-requests only from a `chrome-extension://` origin.
+The receiver is the `marginalia` Claude Code mod in `claude-mod/`. It accepts requests only
+from a `chrome-extension://` origin.
+
+### Install the mod
+
+The mod needs `node` 20 or later on `PATH`.
+
+1. Add the absolute path of `claude-mod/` to `CLAUDE_CODE_PLUGIN_DIRS` under `env` in
+   `~/.claude/settings.json`. Separate several entries with `:`.
+   ```json
+   "env": { "CLAUDE_CODE_PLUGIN_DIRS": "/home/<you>/marginalia/claude-mod" }
+   ```
+2. Restart Claude Code. `/marginalia` is now a command.
+
+If you ask Claude Code to install Marginalia, point it at this section and at
+[Load unpacked](#load-unpacked). It cannot click **Load unpacked** for you.

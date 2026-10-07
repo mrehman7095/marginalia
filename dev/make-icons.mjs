@@ -1,4 +1,4 @@
-// Regenerates icons/*.png without dependencies: node dev/make-icons.mjs
+// Regenerates extension/icons/*.png without dependencies: node dev/make-icons.mjs
 import { writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 
@@ -59,5 +59,5 @@ for (const size of [16, 32, 48, 128]) {
     Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
     chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0)),
   ]);
-  writeFileSync(new URL(`../icons/icon${size}.png`, import.meta.url), png);
+  writeFileSync(new URL(`../extension/icons/icon${size}.png`, import.meta.url), png);
 }
