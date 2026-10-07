@@ -100,3 +100,22 @@ sensitive.
 | `offscreen.html`, `offscreen.js` | Builds the HTML export and the agent export as Blobs |
 | `ui.css` | Styles for the popup and history page |
 | `icons/` | Toolbar icons; regenerate with `node dev/make-icons.mjs` |
+
+## Live to Claude
+
+Notes can go straight to one Claude Code session while you work.
+
+1. In the Claude Code session that should get the notes, run `/marginalia`. That session
+   starts a receiver on `127.0.0.1:47321`. No other session gets notes. Running
+   `/marginalia` in another session moves the receiver there; `/marginalia stop` ends it.
+2. In the popup, switch on **Live to Claude**. The popup says whether a session is listening.
+3. Each saved note (new or edited) and each drawing is sent with its annotated screenshot.
+   By default Claude starts on its own 8 seconds after your last note and replies with the
+   cause and a proposed fix for each. `/marginalia quiet` makes notes wait for your next
+   prompt instead; `/marginalia auto` switches back.
+4. A note saved while no session listens waits in the extension and is sent when one does.
+5. When Claude fixes a note it marks it resolved; the pin turns resolved within about 30
+   seconds, and its tooltip shows Claude's one-line comment.
+
+The receiver is the `marginalia` Claude Code mod (`~/.claude/mods/marginalia`). It accepts
+requests only from a `chrome-extension://` origin.

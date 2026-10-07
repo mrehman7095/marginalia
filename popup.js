@@ -56,5 +56,15 @@ for (const mode of ['annotate', 'draw']) {
     else say(r.error || 'This page cannot be annotated.');
   };
 }
+function showLive(st) {
+  $('live').checked = st.enabled;
+  $('liveState').hidden = !st.enabled;
+  if (!st.enabled) return;
+  $('liveState').textContent = st.error
+    || (st.connected ? `Each saved note goes to the Claude session that ran /marginalia.${st.waiting ? ` Sending ${st.waiting} that waited.` : ''}`
+      : 'No Claude session is listening. Run /marginalia in the one that should get notes.');
+}
+$('live').onchange = async () => showLive(await send('setLive', { enabled: $('live').checked }));
+send('liveStatus').then(showLive);
 $('history').onclick = () => chrome.tabs.create({ url: chrome.runtime.getURL('history.html') });
 render();

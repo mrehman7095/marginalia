@@ -28,6 +28,8 @@
   chrome.storage.local.get('activeSession').then(({ activeSession }) => setSession(activeSession));
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && 'activeSession' in changes) setSession(changes.activeSession.newValue);
+    // Claude resolved a note through Live to Claude.
+    else if (area === 'local' && 'notesChangedAt' in changes && ui) ui.refresh();
   });
 
   chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
@@ -238,9 +240,11 @@
       return el ? viewRect(el.getBoundingClientRect()) : null;
     }
 
+    const noteTitle = (n) => (n.resolution ? `${n.text}\n\nClaude: ${n.resolution}` : n.text);
+
     function renderPins() {
       pinsEl.innerHTML = notes.map((n) =>
-        `<button class="pin tag-${n.tag}${n.status === 'resolved' ? ' resolved' : ''}" data-id="${n.id}" title="${esc(n.text)}">${n.number}</button>`,
+        `<button class="pin tag-${n.tag}${n.status === 'resolved' ? ' resolved' : ''}" data-id="${n.id}" title="${esc(noteTitle(n))}">${n.number}</button>`,
       ).join('');
       $('.count').textContent = notes.length;
       position();
@@ -266,7 +270,7 @@
       const html = notes.map((n) =>
         `<div class="item" data-id="${n.id}"><span class="num tag-${n.tag}">${n.number}</span>` +
         `<span class="tag">${n.tag}</span>${n.orphaned ? '<span class="orphan">orphaned</span>' : ''}` +
-        `${n.status === 'resolved' ? '<span class="done">resolved</span>' : ''}<span class="text">${esc(n.text)}</span></div>`,
+        `${n.status === 'resolved' ? '<span class="done">resolved</span>' : ''}<span class="text" title="${esc(noteTitle(n))}">${esc(n.text)}</span></div>`,
       ).join('') || '<div class="empty">No notes on this page.</div>';
       if (listEl.innerHTML !== html) listEl.innerHTML = html;
     }
@@ -705,7 +709,9 @@
     .pin { position: fixed; top: 0; left: 0; pointer-events: auto; width: 22px; height: 22px; padding: 0; border-radius: 50%;
       background: var(--c); border: 2px solid #fff; color: #fff; font-weight: 700; font-size: 11px;
       box-shadow: 0 1px 4px rgba(0,0,0,.35); }
-    .pin.resolved { opacity: .55; }
+    .pin.resolved { background: #1f7a4d; border-color: #1f7a4d; color: #fff; }
+    .pin.resolved::after { content: "✓"; position: absolute; right: -6px; top: -6px; width: 13px; height: 13px; border-radius: 50%;
+      background: #fff; color: #1f7a4d; font-size: 9px; line-height: 13px; text-align: center; box-shadow: 0 0 0 1px #1f7a4d; }
     .hover, .region, .flash { position: fixed; display: none; pointer-events: none; }
     .hover { outline: 2px solid #3e7bfa; background: rgba(62,123,250,.12); }
     .hover::after { content: attr(data-label); position: absolute; top: -20px; left: 0; background: #3e7bfa; color: #fff;

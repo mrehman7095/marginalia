@@ -231,6 +231,7 @@ async function saveNote(tab, { note, page }) {
   await db.put('notes', record);
   let captureError = null;
   if (recapture) await queueCapture(tab, snap.id).catch((e) => (captureError = String(e?.message || e)));
+  sendLive({ kind: 'note', sessionId: session.id, id: record.id });
   return { record, captureError };
 }
 
@@ -242,6 +243,7 @@ async function saveDrawing(tab, { strokes, page }) {
   await db.put('drawings', drawing);
   if (strokes.some((s) => s.tool === 'redact')) await db.patchIfSession('snapshots', snap.id, () => ({ locked: true }));
   await queueCapture(tab, snap.id);
+  sendLive({ kind: 'drawing', sessionId: session.id, id: drawing.id });
   return drawing;
 }
 
@@ -337,6 +339,106 @@ async function sendMode(mode) {
   }
 }
 
+/* ---------- live to Claude ---------- */
+
+// The /marginalia command in one Claude Code session listens here (WSL forwards localhost).
+const LIVE_URL = 'http://127.0.0.1:47321';
+const LIVE_ALARM = 'live-sync';
+const liveEnabled = async () => (await chrome.storage.local.get('liveToClaude')).liveToClaude === true;
+
+async function updateUnsent(fn) {
+  const { liveUnsent = [] } = await chrome.storage.local.get('liveUnsent');
+  const next = fn(liveUnsent);
+  await chrome.storage.local.set({ liveUnsent: next });
+  return next;
+}
+
+// Sends one note or drawing ({ kind, sessionId, id }). Never blocks a save: a send that
+// fails waits in liveUnsent until a Claude session listens again.
+async function pushLive(item) {
+  exportsBuilding++;
+  try {
+    await ensureOffscreen();
+    const r = await chrome.runtime.sendMessage({
+      target: 'offscreen', type: 'live', id: item.sessionId, kind: item.kind, itemId: item.id,
+    });
+    if (!r?.ok) {
+      // Deleted since it was queued, or its session is gone: nothing left to send.
+      await updateUnsent((list) => list.filter((u) => u.id !== item.id));
+      await chrome.storage.local.set({ liveError: `Could not build ${item.kind} for Claude: ${r?.error || 'no reply'}` });
+      return false;
+    }
+    const note = item.kind === 'note' ? await db.get('notes', item.id) : null;
+    const res = await fetch(`${LIVE_URL}/note`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        kind: item.kind, session: r.session, md: r.md, png: r.png,
+        note: { id: item.id, number: note?.number ?? 0, status: note?.status },
+      }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) throw new Error(`Claude receiver answered ${res.status}`);
+    await updateUnsent((list) => list.filter((u) => u.id !== item.id));
+    await chrome.storage.local.set({ liveError: null });
+    return true;
+  } catch (e) {
+    const waiting = await updateUnsent((list) => [...list.filter((u) => u.id !== item.id), item]);
+    const offline = e?.name === 'TypeError' || e?.name === 'TimeoutError';
+    await chrome.storage.local.set({
+      liveError: offline
+        ? `${waiting.length} waiting: no Claude session is listening. Run /marginalia in one; they send on their own.`
+        : String(e?.message || e),
+    });
+    return false;
+  } finally {
+    exportsBuilding--;
+    closeOffscreenWhenIdle();
+  }
+}
+
+// Pulls the resolves Claude made, then sends anything that waited. One run at a time.
+let syncing = null;
+const syncLive = () => (syncing ??= doSyncLive().finally(() => (syncing = null)));
+
+async function doSyncLive() {
+  if (!(await liveEnabled())) return;
+  const { liveUnsent = [] } = await chrome.storage.local.get('liveUnsent');
+  for (const item of liveUnsent) if (!(await pushLive(item))) return;
+  const { liveCursor = {} } = await chrome.storage.local.get('liveCursor');
+  const q = new URLSearchParams({ since: liveCursor.seq || 0, boot: liveCursor.boot || '' });
+  const r = await fetch(`${LIVE_URL}/updates?${q}`, { signal: AbortSignal.timeout(3000) })
+    .then((res) => res.json(), () => null);
+  if (!r?.ok || !Array.isArray(r.updates)) return;
+  for (const u of r.updates) {
+    await db.patchIfSession('notes', u.noteId, () => ({
+      status: u.status, resolution: u.comment, resolvedBy: 'claude', updatedAt: now(),
+    }));
+  }
+  await chrome.storage.local.set({ liveCursor: { boot: r.boot, seq: r.seq } });
+  if (r.updates.length) await chrome.storage.local.set({ notesChangedAt: Date.now() });
+}
+
+const sendLive = async (item) => {
+  if (await liveEnabled()) await pushLive(item).then((ok) => ok && syncLive());
+};
+
+async function scheduleLive() {
+  if (await liveEnabled()) await chrome.alarms.create(LIVE_ALARM, { periodInMinutes: 0.5 });
+  else await chrome.alarms.clear(LIVE_ALARM);
+}
+chrome.alarms.onAlarm.addListener((a) => a.name === LIVE_ALARM && syncLive());
+chrome.runtime.onStartup.addListener(scheduleLive);
+chrome.runtime.onInstalled.addListener(scheduleLive);
+
+async function liveStatus() {
+  const { liveToClaude, liveError, liveUnsent = [] } = await chrome.storage.local.get(['liveToClaude', 'liveError', 'liveUnsent']);
+  if (liveToClaude !== true) return { enabled: false };
+  const connected = await fetch(`${LIVE_URL}/ping`, { signal: AbortSignal.timeout(2000) }).then((r) => r.ok, () => false);
+  if (connected && liveUnsent.length) syncLive();
+  return { enabled: true, connected, waiting: liveUnsent.length, error: liveError || null };
+}
+
 /* ---------- wiring ---------- */
 
 const handlers = {
@@ -380,6 +482,12 @@ const handlers = {
   },
   markOrphaned: (m) => db.patchIfSession('notes', m.id, () => ({ orphaned: m.orphaned })),
   pruneOlderThan: (m) => pruneOlderThan(m.days),
+  liveStatus: () => liveStatus(),
+  setLive: async (m) => {
+    await chrome.storage.local.set({ liveToClaude: !!m.enabled, liveError: null });
+    await scheduleLive();
+    return liveStatus();
+  },
 };
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {

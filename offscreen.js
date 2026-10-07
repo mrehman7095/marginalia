@@ -1,7 +1,7 @@
 /* Builds export files as Blobs. A service worker has no URL.createObjectURL, and a
  * data: URL would sit in download history and can exceed the maximum string length.
  */
-const BUILDERS = { build: buildHtml, agent: buildAgent };
+const BUILDERS = { build: buildHtml, agent: buildAgent, live: buildLive };
 
 chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   const builder = msg?.target === 'offscreen' && BUILDERS[msg.type];
@@ -118,4 +118,31 @@ async function buildAgent({ id }) {
   const notesMd = new Blob([md.join('\n') + '\n'], { type: 'text/markdown' });
   files.unshift({ name: 'notes.md', url: URL.createObjectURL(notesMd) });
   return { files };
+}
+
+/* ---------- live to Claude: one note, its page facts and its annotated snapshot ---------- */
+
+const blobBase64 = (blob) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(String(reader.result).split(',')[1]);
+  reader.onerror = () => reject(reader.error);
+  reader.readAsDataURL(blob);
+});
+
+async function buildLive({ id, kind, itemId }) {
+  const { session, snapshots, notes, drawings } = await load(id);
+  const item = (kind === 'drawing' ? drawings : notes).find((x) => x.id === itemId);
+  if (!item) throw new Error(`${kind === 'drawing' ? 'Drawing' : 'Note'} not found`);
+  const snap = snapshots.find((s) => s.id === item.snapshotId);
+  const md = kind === 'drawing'
+    ? [`### Drawing on ${snap?.title || 'Untitled'}`, '', drawingsMd([item]).replace(/^### Drawings\n\n/, '')]
+    : [noteMd(item)];
+  md.push('', `- page: ${snap?.title || 'Untitled'} — ${item.url}`);
+  if (snap) md.push(`- viewport: ${snap.vw}x${snap.vh} @${snap.dpr}x, scroll ${round(snap.scrollX)}, ${round(snap.scrollY)}`);
+  if (snap?.nonLocal) md.push('- caution: the screenshot comes from a non-local host and may contain real member data');
+  const png = snap?.image
+    ? await blobBase64(await annotatedPng(snap, notes.filter((n) => n.snapshotId === snap.id),
+      drawings.filter((d) => d.snapshotId === snap.id)))
+    : null;
+  return { session: { id: session.id, name: session.name }, md: md.join('\n'), png };
 }
