@@ -8,6 +8,10 @@ You click an element, write a note, and Marginalia captures the screen with the 
 outlined and numbered. Send the notes live to a Claude Code session while you work, export
 them as a folder an agent can read, or export one offline HTML report.
 
+![Marginalia demo](docs/demo.gif)
+
+The full-quality version is [docs/demo.mp4](docs/demo.mp4).
+
 Plain JavaScript, Manifest V3, no build step and no dependencies.
 
 ## Features
@@ -31,7 +35,7 @@ Plain JavaScript, Manifest V3, no build step and no dependencies.
 |---|---|
 | `extension/` | The Chrome extension. Load this folder unpacked. |
 | `claude-mod/` | The Claude Code mod that receives live notes and adds `/marginalia`. |
-| `dev/` | Development helpers (icon generator). |
+| `dev/` | Development helpers: icon generator, and `record-demo.mjs`, which records `docs/demo.*` against the sample page in `dev/demo/`. |
 | `sync-to-windows.sh` | Copies `extension/` to Windows when the repo lives in WSL. |
 | `CLAUDE-SETUP.md` | Install steps written for Claude Code to follow. |
 

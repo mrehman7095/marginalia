@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Workspace settings · Acme Inc</title>
+  <style>
+    :root { --bg: #f5f6f8; --card: #fff; --line: #e3e6ec; --text: #1d2330; --muted: #667085; --brand: #0f766e; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    .app { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+    aside { background: #111827; color: #cbd2dc; padding: 20px 14px; }
+    .logo { display: flex; align-items: center; gap: 10px; color: #fff; font-weight: 700; font-size: 16px; margin-bottom: 28px; }
+    .logo span { width: 30px; height: 30px; border-radius: 8px; background: var(--brand); display: grid; place-items: center; }
+    nav a { display: block; padding: 8px 10px; border-radius: 6px; color: inherit; text-decoration: none; margin-bottom: 2px; }
+    nav a.on { background: #1f2937; color: #fff; }
+    main { padding: 22px 32px; }
+    header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+    h1 { font-size: 22px; margin: 0; }
+    .crumbs { color: var(--muted); font-size: 13px; }
+    .avatar { width: 34px; height: 34px; border-radius: 50%; background: #c7d2fe; color: #3730a3; display: grid; place-items: center; font-weight: 700; }
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 18px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
+    .stat .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+    .stat .value { font-size: 24px; font-weight: 700; }
+    .stat .sub { color: var(--muted); font-size: 13px; }
+    /* Bug: the plan name runs into the price. */
+    .stat.plan .value { white-space: nowrap; }
+    .stat.plan .price { display: block; margin-top: -26px; margin-left: 120px; font-size: 22px; font-weight: 700; color: #0f766e; }
+    .bar { height: 6px; background: #eef0f4; border-radius: 3px; margin-top: 8px; }
+    .bar div { height: 100%; background: var(--brand); border-radius: 3px; }
+    .grid { display: grid; grid-template-columns: 1fr 1.25fr; gap: 16px; }
+    h2 { font-size: 15px; margin: 0 0 12px; }
+    label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+    input, select { width: 100%; padding: 8px 10px; border: 1px solid #d0d5dd; border-radius: 6px; font: inherit; background: #fff; color: inherit; }
+    .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; align-items: flex-start; }
+    .btn { padding: 8px 14px; border-radius: 6px; border: 1px solid #d0d5dd; background: #fff; font: inherit; cursor: pointer; }
+    /* Bug: the primary button sits lower than its neighbour. */
+    .btn.primary { background: var(--brand); border-color: var(--brand); color: #fff; margin-top: 9px; }
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 500; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+    td { padding: 9px 8px; border-bottom: 1px solid var(--line); }
+    td small { color: var(--muted); display: block; }
+    .pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #ecfdf3; color: #067647; }
+    .pill.pending { background: #fffaeb; color: #b54708; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside>
+      <div class="logo"><span>A</span>Acme Inc</div>
+      <nav>
+        <a href="#">Overview</a>
+        <a href="#">Projects</a>
+        <a href="#">Reports</a>
+        <a href="#" class="on">Settings</a>
+        <a href="#">Billing</a>
+      </nav>
+    </aside>
+    <main>
+      <header>
+        <div>
+          <div class="crumbs">Settings / Workspace</div>
+          <h1>Workspace settings</h1>
+        </div>
+        <div class="avatar">JD</div>
+      </header>
+
+      <section class="stats">
+        <div class="card stat plan">
+          <div class="label">Plan</div>
+          <div class="value">Business Annual</div>
+          <span class="price">$1,240/mo</span>
+          <div class="sub">Renews on 1 March</div>
+        </div>
+        <div class="card stat">
+          <div class="label">Seats</div>
+          <div class="value">18 of 25</div>
+          <div class="bar"><div style="width:72%"></div></div>
+        </div>
+        <div class="card stat">
+          <div class="label">Storage</div>
+          <div class="value">64%</div>
+          <div class="bar"><div style="width:64%"></div></div>
+        </div>
+      </section>
+
+      <section class="grid">
+        <div class="card">
+          <h2>General</h2>
+          <label for="ws">Workspace name</label>
+          <input id="ws" value="Acme Inc">
+          <label for="owner">Account owner</label>
+          <input id="owner" value="jane.doe@example.com">
+          <label for="tz">Time zone</label>
+          <select id="tz"><option>UTC−05:00 Eastern Time</option></select>
+          <div class="actions">
+            <button class="btn">Cancel</button>
+            <button class="btn primary" id="save">Save chanegs</button>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Members</h2>
+          <table>
+            <thead><tr><th>Name</th><th>Role</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td>Jane Doe<small>jane.doe@example.com</small></td><td>Owner</td><td><span class="pill">Active</span></td></tr>
+              <tr><td>Sam Rivera<small>sam@example.com</small></td><td>Admin</td><td><span class="pill">Active</span></td></tr>
+              <tr><td>Alex Kim<small>alex@example.com</small></td><td>Member</td><td><span class="pill pending">Invited 3 days from now</span></td></tr>
+              <tr><td>Robin Park<small>robin@example.com</small></td><td>Member</td><td><span class="pill">Active</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
