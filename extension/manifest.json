@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Marginalia",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Annotate web app UIs during a work session and export an offline end-of-day report.",
   "icons": {
     "16": "icons/icon16.png",
@@ -37,12 +37,16 @@
     "draw": {
       "suggested_key": { "default": "Alt+Shift+D" },
       "description": "Toggle draw mode"
+    },
+    "measure": {
+      "suggested_key": { "default": "Alt+Shift+M" },
+      "description": "Toggle measure mode"
     }
   },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content.js"],
+      "js": ["measure.js", "content.js"],
       "run_at": "document_idle"
     }
   ]

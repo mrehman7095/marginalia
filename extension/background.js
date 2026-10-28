@@ -500,5 +500,5 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 chrome.commands.onCommand.addListener((command) => {
-  if (command === 'annotate' || command === 'draw') sendMode(command);
+  if (['annotate', 'draw', 'measure'].includes(command)) sendMode(command);
 });

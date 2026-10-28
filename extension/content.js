@@ -156,7 +156,7 @@
     const host = document.createElement('marginalia-root');
     host.style.cssText = 'all:initial;position:fixed;top:0;left:0;width:0;height:0;z-index:2147483647;';
     const root = host.attachShadow({ mode: 'open' });
-    root.innerHTML = `<style>${CSS_TEXT}</style>
+    root.innerHTML = `<style>${CSS_TEXT}${globalThis.__marginaliaMeasure?.css || ''}</style>
       <div class="pins"></div>
       <div class="hover"></div><div class="region"></div><div class="flash"></div>
       <div class="panel">
@@ -168,6 +168,7 @@
           <button data-act="pins">Hide pins</button>
           <button data-act="annotate">Annotate</button>
           <button data-act="draw">Draw</button>
+          <button data-act="measure">Measure</button>
         </div>
       </div>
       <div class="toast" hidden></div>`;
@@ -182,6 +183,8 @@
     let mode = null;
     let editor = null;
     let draw = null;
+    let measure = null;
+    const guides = [];
     let url = location.href;
     let raf = 0;
 
@@ -195,7 +198,7 @@
         e.target.closest('button').textContent = pinsHidden ? 'Show pins' : 'Hide pins';
         pinsEl.hidden = pinsHidden;
       }
-      if (act === 'annotate' || act === 'draw') toggleMode(act);
+      if (act === 'annotate' || act === 'draw' || act === 'measure') toggleMode(act);
     });
 
     function toast(text) {
@@ -301,7 +304,7 @@
 
     /* ----- editor ----- */
 
-    function openEditor({ note, kind, element, rect }) {
+    function openEditor({ note, kind, element, rect, text = '', tag = 'bug' }) {
       closeEditor();
       const r = note ? rectOf(note) || note.rect : rect;
       const box = document.createElement('div');
@@ -321,8 +324,9 @@
       root.appendChild(box);
       const ta = box.querySelector('textarea');
       const sel = box.querySelector('select');
-      ta.value = note?.text || '';
-      sel.value = note?.tag || 'bug';
+      const init = { text: note?.text || text, tag: note?.tag || tag };
+      ta.value = init.text;
+      sel.value = init.tag;
       if (note) box.querySelector('.resolved').checked = note.status === 'resolved';
       const left = Math.min(Math.max(8, r.x), innerWidth - 300);
       const below = r.y + r.h + 8;
@@ -362,8 +366,15 @@
         };
       }
       ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) save(); });
-      box.dirty = () => ta.value !== (note?.text || '') || sel.value !== (note?.tag || 'bug');
+      box.dirty = () => ta.value !== init.text || sel.value !== init.tag;
       editor = box;
+    }
+
+    function dismissEditor() {
+      if (!editor) return false;
+      if (editor.dirty()) toast('Save or cancel the open note first.');
+      else closeEditor();
+      return true;
     }
 
     function closeEditor() {
@@ -409,12 +420,7 @@
     function onDown(e) {
       if (ours(e)) return;
       block(e);
-      if (editor) {
-        if (editor.dirty()) toast('Save or cancel the open note first.');
-        else closeEditor();
-        return;
-      }
-      if (e.button !== 0) return;
+      if (dismissEditor() || e.button !== 0) return;
       press = { x: e.clientX, y: e.clientY, target: e.target, dragging: false };
     }
 
@@ -620,8 +626,23 @@
 
     /* ----- modes and lifecycle ----- */
 
+    const MODE_TOASTS = {
+      annotate: 'Annotate: click an element or drag a region. Esc exits.',
+      draw: 'Draw: Esc saves and exits.',
+      measure: 'Measure: pick tools in the top bar. Esc exits.',
+    };
+
+    function startMeasure() {
+      return globalThis.__marginaliaMeasure({
+        root, host, guides, toast, dismissEditor, block, blocked: BLOCK, ours, selectorFor,
+        openNote: ({ element, text, tag }) =>
+          openEditor({ kind: 'element', element, rect: viewRect(element.getBoundingClientRect()), text, tag }),
+        exit: () => mode === 'measure' && toggleMode('measure'),
+      });
+    }
+
     function updateModeButtons() {
-      root.querySelectorAll('.bar [data-act=annotate], .bar [data-act=draw]').forEach((b) =>
+      root.querySelectorAll('.bar [data-act=annotate], .bar [data-act=draw], .bar [data-act=measure]').forEach((b) =>
         b.classList.toggle('on', b.dataset.act === mode));
     }
 
@@ -629,19 +650,30 @@
       const prev = mode;
       if (prev === 'annotate') setAnnotate(false);
       if (prev === 'draw') draw?.finish(true);
+      if (prev === 'measure') {
+        measure.stop();
+        measure = null;
+      }
       closeEditor();
       mode = prev === next ? null : next;
       if (mode === 'annotate') setAnnotate(true);
       if (mode === 'draw') draw = startDraw();
+      if (mode === 'measure') measure = startMeasure();
       updateModeButtons();
-      if (mode) toast(mode === 'annotate' ? 'Annotate: click an element or drag a region. Esc exits.' : 'Draw: Esc saves and exits.');
+      if (mode) toast(MODE_TOASTS[mode]);
     }
 
     function onKey(e) {
       if (!mode && !editor) return;
       if (e.key === 'Escape') {
-        e.preventDefault();
-        e.stopImmediatePropagation();
+        // Measure mode leaves the page usable: Esc in a focused page element (a dialog, a menu) is the
+        // page's. Without the inspector the page also sees the Esc that exits.
+        const measuring = mode === 'measure' && !editor;
+        if (measuring && ![document.body, document.documentElement, host, null].includes(document.activeElement)) return;
+        if (!measuring || measure.inspecting()) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+        }
         if (editor) closeEditor();
         else toggleMode(mode);
       } else if (mode === 'draw' && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
@@ -669,6 +701,8 @@
         if (keyChanged) {
           if (draw) draw.finish(false);
           closeEditor();
+          guides.length = 0;
+          measure?.pageChanged();
           loadNotes();
         }
       } else if (notes.length) schedule();
@@ -683,6 +717,7 @@
     function destroy() {
       if (mode === 'annotate') setAnnotate(false);
       draw?.finish(false);
+      measure?.stop();
       clearInterval(tick);
       observer.disconnect();
       removeEventListener('scroll', schedule, { capture: true });

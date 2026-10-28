@@ -21,6 +21,9 @@ Plain JavaScript, Manifest V3, no build step and no dependencies.
   resizes and single-page-app re-renders.
 - **Drawing.** Pen, highlighter, arrow, rectangle, ellipse, text label and redact, with undo
   and redo.
+- **Measure.** Pixel rulers with snapping guides, a box inspector with margin, padding and
+  distances, a finder for edges that are 1 to 3 px out of line, and a map of font sizes that
+  flags odd ones. A finding becomes a note in one click.
 - **Redaction burned into pixels.** Redacted areas are painted solid into the stored
   screenshot, so the raw pixels never reach an export.
 - **Live to Claude.** Each saved note goes to one Claude Code session with its screenshot.
@@ -84,9 +87,26 @@ The mod needs Node 20 or later on `PATH`.
    drag to mark a region. Click a numbered pin to edit, resolve or delete its note.
 3. **Draw** (`Alt+Shift+D`): pick a tool and draw. `Ctrl+Z` / `Ctrl+Shift+Z` undo and redo.
    `Esc` saves and exits; Cancel discards.
-4. The floating bar at the bottom right lists the notes on the current page (click one to
+4. **Measure** (`Alt+Shift+M`): switch the tools on or off in the top bar. The selection is kept.
+   - **Rulers**: drag from a ruler to add a guide. It snaps to an element edge within 4 px; hold
+     `Alt` to place it freely. Adjacent guides show the gap between them. Double-click a guide,
+     or drag it back onto its ruler, to remove it. Guides last until the page changes.
+   - **Inspect**: hover to see the box, margin (orange) and padding (green). Click to pin an
+     element, then hover another to see the distances between them. Click it again to unpin.
+     Page clicks are blocked only while this tool is on. Elements inside open shadow roots work too.
+   - **Near-miss**: lists edges in view that are 1 to 3 px out of line with a nearby element.
+     Click a row to flash the pair.
+   - **Fonts**: labels text with its size and weight and lists each size, weight, line height
+     and family. Fractional sizes, rare near-duplicates and a family other than the page's main
+     one are flagged. Click a row to show only those elements.
+   - **Note** on a finding opens the note editor with the text filled in.
+   - Near-miss and Fonts rescan after scrolls, resizes and page changes. If a page is too large to
+     check in full, the panel says "Scan truncated".
+   - `Esc` exits. When a page element has focus (a dialog, a menu), `Esc` goes to the page instead;
+     use **Exit** or the shortcut.
+5. The floating bar at the bottom right lists the notes on the current page (click one to
    scroll to it), hides or shows the pins, and switches modes. `Esc` leaves any mode.
-5. **End session** in the popup downloads `marginalia-<session-name>.html`.
+6. **End session** in the popup downloads `marginalia-<session-name>.html`.
 
 Open **history** from the popup to browse, rename, delete, resume or re-export sessions,
 and to delete sessions older than N days. Resuming a session shows its pins again on live
@@ -137,6 +157,16 @@ From WSL the folder is under `/mnt/c/Users/<you>/Downloads/`.
 - Pins re-find their element by CSS selector, then by text fingerprint, then by DOM path.
   A note whose element is gone is marked orphaned in the list; it is never dropped.
 - The content script runs on every page but does nothing until a session is active.
+- Measure mode scans at most 1500 elements in view, cut to their scroll and overflow
+  containers; clipped-away subtrees are skipped. Near-miss compares element edges of the same
+  kind that differ by 0.5 to 3.5 px, only between elements at most 40 px apart, and skips
+  ancestor and descendant pairs, clipped edges, edges covered by another element, rotated
+  boxes, centred boxes of different sizes, and top or bottom edges in different scroll layers.
+  It counts an element only when its box is visible (background, border, shadow, or a control
+  or media element); for plain text it uses the edge the text is aligned to. A size, weight
+  and family is flagged as rare when 2 or fewer elements use it while another size within
+  1 px, with the same weight and family, is used at least 4 times as often (and at least 5
+  times). DOM changes rescan after 300 ms, at most once a second.
 - The Claude Code mod runs a small HTTP server on `127.0.0.1:47321`. It accepts requests
   only from a `chrome-extension://` origin and writes screenshots to
   `~/.claude/marginalia-inbox/`.
@@ -167,6 +197,7 @@ before you share them.
 | `extension/background.js` | Sessions, capture queue, redaction burn-in, export download, live send |
 | `extension/db.js` | IndexedDB access for the service worker and offscreen document |
 | `extension/content.js` | In-page pins, annotate and draw modes, floating list |
+| `extension/measure.js` | Measure mode: rulers and guides, box inspector, near-miss finder, font map |
 | `extension/renderer.js`, `report.css` | Report renderer shared by the history page and the export |
 | `extension/popup.html`, `popup.js` | Toolbar popup |
 | `extension/history.html`, `history.js` | Session history and viewer |

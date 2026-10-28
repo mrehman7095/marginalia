@@ -49,7 +49,7 @@ $('agent').onclick = async () => {
   }
   $('agent').disabled = false;
 };
-for (const mode of ['annotate', 'draw']) {
+for (const mode of ['annotate', 'draw', 'measure']) {
   $(mode).onclick = async () => {
     const r = await send('mode', { mode });
     if (r.ok) window.close();
